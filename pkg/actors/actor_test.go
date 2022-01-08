@@ -1,7 +1,15 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package actors
 
@@ -10,6 +18,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/atomic"
 )
 
 var reentrancyStackDepth = 32
@@ -67,7 +76,10 @@ func TestDisposedActor(t *testing.T) {
 
 		testActor.lock(nil)
 		testActor.unlock()
-		assert.False(t, testActor.disposed)
+		testActor.disposeLock.RLock()
+		disposed := testActor.disposed
+		testActor.disposeLock.RUnlock()
+		assert.False(t, disposed)
 	})
 
 	t.Run("disposed", func(t *testing.T) {
@@ -105,13 +117,13 @@ func TestPendingActorCalls(t *testing.T) {
 		testActor := newActor("testType", "testID", &reentrancyStackDepth)
 		testActor.lock(nil)
 
-		channelClosed := false
+		channelClosed := atomic.NewBool(false)
 		go func() {
 			select {
 			case <-time.After(200 * time.Millisecond):
 				break
 			case <-testActor.channel():
-				channelClosed = true
+				channelClosed.Store(true)
 				break
 			}
 		}()
@@ -119,7 +131,7 @@ func TestPendingActorCalls(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		testActor.unlock()
 		time.Sleep(100 * time.Millisecond)
-		assert.True(t, channelClosed)
+		assert.True(t, channelClosed.Load())
 	})
 
 	t.Run("multiple listeners", func(t *testing.T) {
@@ -127,7 +139,7 @@ func TestPendingActorCalls(t *testing.T) {
 		testActor.lock(nil)
 
 		nListeners := 10
-		releaseSignaled := make([]bool, nListeners)
+		releaseSignaled := make([]atomic.Bool, nListeners)
 
 		for i := 0; i < nListeners; i++ {
 			releaseCh := testActor.channel()
@@ -136,7 +148,7 @@ func TestPendingActorCalls(t *testing.T) {
 				case <-time.After(200 * time.Millisecond):
 					break
 				case <-releaseCh:
-					releaseSignaled[listenerIndex] = true
+					releaseSignaled[listenerIndex].Store(true)
 					break
 				}
 			}(i)
@@ -145,7 +157,7 @@ func TestPendingActorCalls(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 
 		for i := 0; i < nListeners; i++ {
-			assert.True(t, releaseSignaled[i])
+			assert.True(t, releaseSignaled[i].Load())
 		}
 	})
 }

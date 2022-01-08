@@ -1,21 +1,27 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"strings"
 	"sync"
-
-	"context"
-
-	"net"
 
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -61,8 +67,7 @@ type receivedMessagesResponse struct {
 }
 
 // server is our user app.
-type server struct {
-}
+type server struct{}
 
 func main() {
 	log.Printf("Initializing grpc")
@@ -87,6 +92,9 @@ func main() {
 }
 
 func initializeSets() {
+	lock.Lock()
+	defer lock.Unlock()
+
 	receivedMessagesA = sets.NewString()
 	receivedMessagesB = sets.NewString()
 	receivedMessagesC = sets.NewString()
@@ -118,6 +126,9 @@ func (s *server) OnInvoke(ctx context.Context, in *commonv1pb.InvokeRequest) (*c
 }
 
 func (s *server) getReceivedMessages() []byte {
+	lock.Lock()
+	defer lock.Unlock()
+
 	resp := receivedMessagesResponse{
 		ReceivedByTopicA:   receivedMessagesA.List(),
 		ReceivedByTopicB:   receivedMessagesB.List(),
@@ -171,10 +182,8 @@ func (s *server) ListTopicSubscriptions(ctx context.Context, in *emptypb.Empty) 
 				PubsubName: "messagebus",
 				Topic:      pubsubB,
 			},
-			{
-				PubsubName: "messagebus",
-				Topic:      pubsubC,
-			},
+			// pubsub-c-topic-grpc is loaded from the YAML/CRD
+			// tests/config/app_topic_subscription_pubsub_grpc.yaml.
 			{
 				PubsubName: "messagebus",
 				Topic:      pubsubRaw,

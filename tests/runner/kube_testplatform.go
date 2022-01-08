@@ -1,16 +1,23 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package runner
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
-
-	"log"
 
 	kube "github.com/dapr/dapr/tests/platforms/kubernetes"
 )
@@ -95,6 +102,11 @@ func (c *KubeTestPlatform) addApps(apps []kube.AppDescription) error {
 		if app.RegistryName == "" {
 			app.RegistryName = c.imageRegistry()
 		}
+
+		if app.ImageSecret == "" {
+			app.ImageSecret = c.imageSecret()
+		}
+
 		if app.ImageName == "" {
 			return fmt.Errorf("%s app doesn't have imagename property", app.AppName)
 		}
@@ -149,6 +161,14 @@ func (c *KubeTestPlatform) imageRegistry() string {
 		return defaultImageRegistry
 	}
 	return reg
+}
+
+func (c *KubeTestPlatform) imageSecret() string {
+	secret := os.Getenv("DAPR_TEST_REGISTRY_SECRET")
+	if secret == "" {
+		return ""
+	}
+	return secret
 }
 
 func (c *KubeTestPlatform) imageTag() string {
@@ -267,17 +287,42 @@ func (c *KubeTestPlatform) Scale(name string, replicas int32) error {
 	return err
 }
 
+// SetAppEnv sets the container environment variable.
+func (c *KubeTestPlatform) SetAppEnv(name, key, value string) error {
+	app := c.AppResources.FindActiveResource(name)
+	appManager := app.(*kube.AppManager)
+
+	if err := appManager.SetAppEnv(key, value); err != nil {
+		return err
+	}
+
+	if _, err := appManager.WaitUntilDeploymentState(appManager.IsDeploymentDone); err != nil {
+		return err
+	}
+
+	appManager.StreamContainerLogs()
+
+	return nil
+}
+
 // Restart restarts all instances for the app.
 func (c *KubeTestPlatform) Restart(name string) error {
 	// To minic the restart behavior, scale to 0 and then scale to the original replicas.
 	app := c.AppResources.FindActiveResource(name)
-	originalReplicas := app.(*kube.AppManager).App().Replicas
+	m := app.(*kube.AppManager)
+	originalReplicas := m.App().Replicas
 
 	if err := c.Scale(name, 0); err != nil {
 		return err
 	}
 
-	return c.Scale(name, originalReplicas)
+	if err := c.Scale(name, originalReplicas); err != nil {
+		return err
+	}
+
+	m.StreamContainerLogs()
+
+	return nil
 }
 
 // PortForwardToApp opens a new connection to the app on a the target port and returns the local port or error.

@@ -1,7 +1,15 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package diagnostics
 
@@ -73,7 +81,7 @@ func HTTPTraceMiddleware(next fasthttp.RequestHandler, appID string, spec config
 // userDefinedHTTPHeaders returns dapr- prefixed header from incoming metadata.
 // Users can add dapr- prefixed headers that they want to see in span attributes.
 func userDefinedHTTPHeaders(reqCtx *fasthttp.RequestCtx) map[string]string {
-	var m = map[string]string{}
+	m := map[string]string{}
 
 	reqCtx.Request.Header.VisitAll(func(key []byte, value []byte) {
 		k := strings.ToLower(string(key))
@@ -180,8 +188,7 @@ func SpanContextToHTTPHeaders(sc trace.SpanContext, setHeader func(string, strin
 }
 
 func tracestateToHeader(sc trace.SpanContext, setHeader func(string, string)) {
-	h := TraceStateToW3CString(sc)
-	if h != "" && len(h) <= maxTracestateLen {
+	if h := TraceStateToW3CString(sc); h != "" && len(h) <= maxTracestateLen {
 		setHeader(tracestateHeader, h)
 	}
 }
@@ -201,7 +208,7 @@ func getAPIComponent(apiPath string) (string, string) {
 	}
 
 	// Split up to 4 delimiters in '/v1.0/state/statestore/key' to get component api type and value
-	var tokens = strings.SplitN(apiPath, "/", 4)
+	tokens := strings.SplitN(apiPath, "/", 4)
 	if len(tokens) < 3 {
 		return "", ""
 	}
@@ -216,7 +223,7 @@ func spanAttributesMapFromHTTPContext(ctx *fasthttp.RequestCtx) map[string]strin
 	method := string(ctx.Request.Header.Method())
 	statusCode := ctx.Response.StatusCode()
 
-	var m = map[string]string{}
+	m := map[string]string{}
 	_, componentType := getAPIComponent(path)
 
 	var dbType string
@@ -273,14 +280,14 @@ func populateActorParams(ctx *fasthttp.RequestCtx, m map[string]string) string {
 	path := string(ctx.Request.URI().Path())
 	// Split up to 7 delimiters in '/v1.0/actors/{actorType}/{actorId}/method/{method}'
 	// to get component api type and value
-	var tokens = strings.SplitN(path, "/", 7)
+	tokens := strings.SplitN(path, "/", 7)
 	if len(tokens) < 7 {
 		return ""
 	}
 
 	m[daprAPIActorTypeID] = fmt.Sprintf("%s.%s", actorType, actorID)
 
-	var dbType = ""
+	dbType := ""
 	switch tokens[5] {
 	case "method":
 		m[gRPCServiceSpanAttributeKey] = daprGRPCServiceInvocationService

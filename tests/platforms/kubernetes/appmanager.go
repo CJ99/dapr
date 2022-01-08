@@ -1,7 +1,15 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package kubernetes
 
@@ -99,6 +107,11 @@ func (m *AppManager) Init() error {
 		m.logPrefix = ContainerLogDefaultPath
 	}
 
+	if err := os.MkdirAll(m.logPrefix, os.ModePerm); err != nil {
+		log.Printf("Failed to create output log directory '%s' Error was: '%s'. Container logs will be discarded", m.logPrefix, err)
+		m.logPrefix = ""
+	}
+
 	log.Printf("Deploying app %v ...", m.app.AppName)
 	if m.app.IsJob {
 		// Deploy app and wait until deployment is done
@@ -164,11 +177,6 @@ func (m *AppManager) Init() error {
 		log.Printf("Creating pod port forwarder for app %v ....", m.app.AppName)
 		m.forwarder = NewPodPortForwarder(m.client, m.namespace)
 		log.Printf("Pod port forwarder for app %v has been created.", m.app.AppName)
-	}
-
-	if err := os.MkdirAll(m.logPrefix, os.ModePerm); err != nil {
-		log.Printf("Failed to create output log directory '%s' Error was: '%s'. Container logs will be discarded", m.logPrefix, err)
-		m.logPrefix = ""
 	}
 
 	return nil
@@ -279,7 +287,23 @@ func (m *AppManager) WaitUntilDeploymentState(isState func(*appsv1.Deployment, e
 	})
 
 	if waitErr != nil {
-		return nil, fmt.Errorf("deployment %q is not in desired state, received: %+v: %s", m.app.AppName, lastDeployment, waitErr)
+		// get deployment's Pods detail status info
+		podClient := m.client.Pods(m.namespace)
+		// Filter only 'testapp=appName' labeled Pods
+		podList, err := podClient.List(context.TODO(), metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("%s=%s", TestAppLabelKey, m.app.AppName),
+		})
+		podStatus := map[string][]apiv1.ContainerStatus{}
+		if err == nil {
+			for _, pod := range podList.Items {
+				podStatus[pod.Name] = pod.Status.ContainerStatuses
+			}
+			log.Printf("deployment %s relate pods: %+v", m.app.AppName, podList)
+		} else {
+			log.Printf("Error list pod for deployment %s. Error was %s", m.app.AppName, err)
+		}
+
+		return nil, fmt.Errorf("deployment %q is not in desired state, received: %+v pod status: %+v error: %s", m.app.AppName, lastDeployment, podStatus, waitErr)
 	}
 
 	return lastDeployment, nil
@@ -416,7 +440,6 @@ func (m *AppManager) DoPortForwarding(podName string, targetPorts ...int) ([]int
 	podList, err := podClient.List(context.TODO(), metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("%s=%s", TestAppLabelKey, m.app.AppName),
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -455,6 +478,44 @@ func (m *AppManager) ScaleDeploymentReplica(replicas int32) error {
 	m.app.Replicas = replicas
 
 	_, err = deploymentsClient.UpdateScale(context.TODO(), m.app.AppName, scale, metav1.UpdateOptions{})
+
+	return err
+}
+
+// SetAppEnv sets an environment variable.
+func (m *AppManager) SetAppEnv(key, value string) error {
+	deploymentsClient := m.client.Deployments(m.namespace)
+
+	deployment, err := deploymentsClient.Get(context.TODO(), m.app.AppName, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
+	for i, container := range deployment.Spec.Template.Spec.Containers {
+		if container.Name != DaprSideCarName {
+			found := false
+			for j, envName := range deployment.Spec.Template.Spec.Containers[i].Env {
+				if envName.Name == key {
+					deployment.Spec.Template.Spec.Containers[i].Env[j].Value = value
+					found = true
+					break
+				}
+			}
+
+			if !found {
+				deployment.Spec.Template.Spec.Containers[i].Env = append(
+					deployment.Spec.Template.Spec.Containers[i].Env,
+					apiv1.EnvVar{
+						Name:  key,
+						Value: value,
+					},
+				)
+			}
+			break
+		}
+	}
+
+	_, err = deploymentsClient.Update(context.TODO(), deployment, metav1.UpdateOptions{})
 
 	return err
 }

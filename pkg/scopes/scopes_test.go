@@ -7,7 +7,7 @@ import (
 )
 
 func TestGetAllowedTopics(t *testing.T) {
-	var allowedTests = []struct {
+	allowedTests := []struct {
 		Metadata map[string]string
 		Target   []string
 		Msg      string
@@ -52,7 +52,7 @@ func TestGetAllowedTopics(t *testing.T) {
 }
 
 func TestGetScopedTopics(t *testing.T) {
-	var scopedTests = []struct {
+	scopedTests := []struct {
 		Scope    string
 		AppID    string
 		Metadata map[string]string
@@ -110,6 +110,42 @@ func TestGetScopedTopics(t *testing.T) {
 			},
 			Target: []string{"topic1"},
 			Msg:    "pass, include repeated appid and topic",
+		},
+		{
+			Scope: "subscriptionScopes",
+			AppID: "appid1",
+			Metadata: map[string]string{
+				"subscriptionScopes": "appid1",
+			},
+			Target: []string{},
+			Msg:    "pass",
+		},
+		{
+			Scope: "subscriptionScopes",
+			AppID: "appid1",
+			Metadata: map[string]string{
+				"subscriptionScopes": "appid2",
+			},
+			Target: []string{},
+			Msg:    "pass",
+		},
+		{
+			Scope: "subscriptionScopes",
+			AppID: "appid1",
+			Metadata: map[string]string{
+				"subscriptionScopes": "appid1;appid2=topic2",
+			},
+			Target: []string{},
+			Msg:    "pass",
+		},
+		{
+			Scope: "subscriptionScopes",
+			AppID: "appid1",
+			Metadata: map[string]string{
+				"subscriptionScopes": "appid1=topic1;appid2",
+			},
+			Target: []string{"topic1"},
+			Msg:    "pass",
 		},
 	}
 	for _, item := range scopedTests {

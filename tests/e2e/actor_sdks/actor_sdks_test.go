@@ -1,9 +1,18 @@
+//go:build e2e
 // +build e2e
 
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package actor_sdks_e2e
 
@@ -23,27 +32,12 @@ import (
 )
 
 const (
-	appName         = "actorinvocationapp"      // App name in Dapr.
-	numHealthChecks = 60                        // Number of get calls before starting tests.
-	callActorURL    = "%s/test/callActorMethod" // URL to force Actor registration
+	appName         = "actorinvocationapp" // App name in Dapr.
+	numHealthChecks = 60                   // Number of get calls before starting tests.
 )
-
-type actorCallRequest struct {
-	ActorType       string `json:"actorType"`
-	ActorId         string `json:"actorId"`
-	Method          string `json:"method"`
-	RemoteActorID   string `json:"remoteId,omitempty"`
-	RemoteActorType string `json:"remoteType,omitempty"`
-}
 
 var tr *runner.TestRunner
 var apps []kube.AppDescription
-
-func getExternalURL(t *testing.T, appName string) string {
-	externalURL := tr.Platform.AcquireAppExternalURL(appName)
-	require.NotEmpty(t, externalURL, "external URL must not be empty!")
-	return externalURL
-}
 
 func healthCheckApp(t *testing.T, externalURL string, numHealthChecks int) {
 	t.Logf("Starting health check for %s\n", externalURL)
@@ -191,7 +185,6 @@ func TestActorInvocationCrossSDKs(t *testing.T) {
 				method := fmt.Sprintf(tt.method, actorType, uuid.New().String())
 				name := fmt.Sprintf("Test %s calling %s", app, fmt.Sprintf(tt.method, actorType, "ActorId"))
 				t.Run(name, func(t *testing.T) {
-
 					resp, err := utils.HTTPPost(fmt.Sprintf("%s/%s", externalURL, method), []byte(tt.payload))
 					t.Log("checking err...")
 					require.NoError(t, err)

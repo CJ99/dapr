@@ -1,7 +1,15 @@
-# ------------------------------------------------------------
-# Copyright (c) Microsoft Corporation and Dapr Contributors.
-# Licensed under the MIT License.
-# ------------------------------------------------------------
+#
+# Copyright 2021 The Dapr Authors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 
 # Docker image build and push setting
@@ -113,6 +121,14 @@ else
 	$(DOCKER) buildx build --build-arg PKG_FILES=sentry --platform $(DOCKER_IMAGE_PLATFORM) -f $(DOCKERFILE_DIR)/$(DOCKERFILE) $(BIN_PATH) -t $(DAPR_SENTRY_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH) --push
 endif
 
+# push docker image to kind cluster
+docker-push-kind: docker-build
+	$(info Pushing $(DOCKER_IMAGE_TAG) docker image to kind cluster...)
+	kind load docker-image $(DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
+	kind load docker-image $(DAPR_RUNTIME_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
+	kind load docker-image $(DAPR_PLACEMENT_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
+	kind load docker-image $(DAPR_SENTRY_DOCKER_IMAGE_TAG)-$(TARGET_OS)-$(TARGET_ARCH)
+
 # publish muti-arch docker image to the registry
 docker-manifest-create: check-docker-env
 	$(DOCKER) manifest create $(DOCKER_IMAGE_TAG) $(DOCKERMUTI_ARCH:%=$(DOCKER_IMAGE_TAG)-%)
@@ -160,7 +176,10 @@ docker-windows-base-push: check-windows-version
 ################################################################################
 
 # Update whenever you upgrade dev container image
-DEV_CONTAINER_VERSION_TAG?=0.1.2
+DEV_CONTAINER_VERSION_TAG?=0.1.5
+
+# Use this to pin a specific version of the Dapr CLI to a devcontainer
+DEV_CONTAINER_CLI_TAG?=1.5.1
 
 # Dapr container image name
 DEV_CONTAINER_IMAGE_NAME=dapr-dev
@@ -173,8 +192,17 @@ ifeq ($(DAPR_REGISTRY),)
 	$(error DAPR_REGISTRY environment variable must be set)
 endif
 
-build-dev-container: check-docker-env-for-dev-container
-	$(DOCKER) build -f $(DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) $(DOCKERFILE_DIR)/. -t $(DAPR_REGISTRY)/$(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG)
+build-dev-container:
+ifeq ($(DAPR_REGISTRY),)
+	$(info DAPR_REGISTRY environment variable not set, tagging image without registry prefix.)
+	$(info `make tag-dev-container` should be run with DAPR_REGISTRY before `make push-dev-container.)
+	$(DOCKER) build --build-arg DAPR_CLI_VERSION=$(DEV_CONTAINER_CLI_TAG) -f $(DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) $(DOCKERFILE_DIR)/. -t $(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG)
+else
+	$(DOCKER) build --build-arg DAPR_CLI_VERSION=$(DEV_CONTAINER_CLI_TAG) -f $(DOCKERFILE_DIR)/$(DEV_CONTAINER_DOCKERFILE) $(DOCKERFILE_DIR)/. -t $(DAPR_REGISTRY)/$(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG)
+endif
+
+tag-dev-container: check-docker-env-for-dev-container
+	$(DOCKER) tag $(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG) $(DAPR_REGISTRY)/$(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG)
 
 push-dev-container: check-docker-env-for-dev-container
 	$(DOCKER) push $(DAPR_REGISTRY)/$(DEV_CONTAINER_IMAGE_NAME):$(DEV_CONTAINER_VERSION_TAG)

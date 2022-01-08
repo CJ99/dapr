@@ -1,7 +1,15 @@
-# ------------------------------------------------------------
-# Copyright (c) Microsoft Corporation and Dapr Contributors.
-# Licensed under the MIT License.
-# ------------------------------------------------------------
+#
+# Copyright 2021 The Dapr Authors
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#     http://www.apache.org/licenses/LICENSE-2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 name: dapr-perf
 
@@ -16,7 +24,7 @@ jobs:
     name: perf tests
     runs-on: ubuntu-latest
     env:
-      GOVER: 1.16
+      GOVER: 1.17
       GOOS: linux
       GOARCH: amd64
       GOPROXY: https://proxy.golang.org
@@ -28,6 +36,10 @@ jobs:
       DAPR_NAMESPACE: dapr-tests
       MAX_TEST_TIMEOUT: 5400
     steps:
+      - name: Setup test output
+        run: |
+          export TEST_OUTPUT_FILE_PREFIX=$GITHUB_WORKSPACE/test_report
+          echo "TEST_OUTPUT_FILE_PREFIX=$TEST_OUTPUT_FILE_PREFIX" >> $GITHUB_ENV
       - name: Set up container log path
         run: |
           echo "DAPR_CONTAINER_LOG_PATH=$GITHUB_WORKSPACE/container_logs/perf_tests" >> $GITHUB_ENV
@@ -203,3 +215,10 @@ jobs:
       - name: Clean up ${{ env.TEST_CLUSTER }} cluster
         if: always() && env.TEST_CLUSTER != ''
         run: make clean-test-env
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@master
+        with:
+          #TODO: .json suffix can be removed from artifact name after test analytics scripts are updated
+          name: test_perf.json
+          path: ${{ env.TEST_OUTPUT_FILE_PREFIX }}_perf*.*

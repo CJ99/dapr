@@ -1,7 +1,15 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package http
 
@@ -41,17 +49,18 @@ const (
 
 // Channel is an HTTP implementation of an AppChannel.
 type Channel struct {
-	client         *fasthttp.Client
-	baseAddress    string
-	ch             chan int
-	tracingSpec    config.TracingSpec
-	appHeaderToken string
-	json           jsoniter.API
+	client              *fasthttp.Client
+	baseAddress         string
+	ch                  chan int
+	tracingSpec         config.TracingSpec
+	appHeaderToken      string
+	json                jsoniter.API
+	maxResponseBodySize int
 }
 
 // CreateLocalChannel creates an HTTP AppChannel
 // nolint:gosec
-func CreateLocalChannel(port, maxConcurrency int, spec config.TracingSpec, sslEnabled bool) (channel.AppChannel, error) {
+func CreateLocalChannel(port, maxConcurrency int, spec config.TracingSpec, sslEnabled bool, maxRequestBodySize int, readBufferSize int) (channel.AppChannel, error) {
 	scheme := httpScheme
 	if sslEnabled {
 		scheme = httpsScheme
@@ -61,11 +70,14 @@ func CreateLocalChannel(port, maxConcurrency int, spec config.TracingSpec, sslEn
 		client: &fasthttp.Client{
 			MaxConnsPerHost:           1000000,
 			MaxIdemponentCallAttempts: 0,
+			MaxResponseBodySize:       maxRequestBodySize * 1024 * 1024,
+			ReadBufferSize:            readBufferSize * 1024,
 		},
-		baseAddress:    fmt.Sprintf("%s://%s:%d", scheme, channel.DefaultChannelAddress, port),
-		tracingSpec:    spec,
-		appHeaderToken: auth.GetAppToken(),
-		json:           jsoniter.ConfigFastest,
+		baseAddress:         fmt.Sprintf("%s://%s:%d", scheme, channel.DefaultChannelAddress, port),
+		tracingSpec:         spec,
+		appHeaderToken:      auth.GetAppToken(),
+		json:                jsoniter.ConfigFastest,
+		maxResponseBodySize: maxRequestBodySize,
 	}
 
 	if sslEnabled {
@@ -75,6 +87,7 @@ func CreateLocalChannel(port, maxConcurrency int, spec config.TracingSpec, sslEn
 	if maxConcurrency > 0 {
 		c.ch = make(chan int, maxConcurrency)
 	}
+
 	return c, nil
 }
 
@@ -149,7 +162,7 @@ func (h *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 	startRequest := time.Now()
 
 	// Send request to user application
-	var resp = fasthttp.AcquireResponse()
+	resp := fasthttp.AcquireResponse()
 	err := h.client.Do(channelReq, resp)
 	defer func() {
 		fasthttp.ReleaseRequest(channelReq)
@@ -158,18 +171,23 @@ func (h *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 
 	elapsedMs := float64(time.Since(startRequest) / time.Millisecond)
 
+	if err != nil {
+		diag.DefaultHTTPMonitoring.ClientRequestCompleted(ctx, verb, req.Message().GetMethod(), strconv.Itoa(nethttp.StatusInternalServerError), int64(resp.Header.ContentLength()), elapsedMs)
+		return nil, err
+	}
+
 	if h.ch != nil {
 		<-h.ch
 	}
 
-	rsp := h.parseChannelResponse(req, resp, err)
+	rsp := h.parseChannelResponse(req, resp)
 	diag.DefaultHTTPMonitoring.ClientRequestCompleted(ctx, verb, req.Message().GetMethod(), strconv.Itoa(int(rsp.Status().Code)), int64(resp.Header.ContentLength()), elapsedMs)
 
 	return rsp, nil
 }
 
 func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMethodRequest) *fasthttp.Request {
-	var channelReq = fasthttp.AcquireRequest()
+	channelReq := fasthttp.AcquireRequest()
 
 	// Construct app channel URI: VERB http://localhost:3000/method?query1=value1
 	uri := fmt.Sprintf("%s/%s", h.baseAddress, req.Message().GetMethod())
@@ -201,20 +219,14 @@ func (h *Channel) constructRequest(ctx context.Context, req *invokev1.InvokeMeth
 	return channelReq
 }
 
-func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *fasthttp.Response, respErr error) *invokev1.InvokeMethodResponse {
+func (h *Channel) parseChannelResponse(req *invokev1.InvokeMethodRequest, resp *fasthttp.Response) *invokev1.InvokeMethodResponse {
 	var statusCode int
 	var contentType string
 	var body []byte
 
-	if respErr != nil {
-		statusCode = fasthttp.StatusInternalServerError
-		contentType = string(invokev1.JSONContentType)
-		body = []byte(fmt.Sprintf("{\"error\": \"client error: %s\"}", respErr))
-	} else {
-		statusCode = resp.StatusCode()
-		contentType = (string)(resp.Header.ContentType())
-		body = resp.Body()
-	}
+	statusCode = resp.StatusCode()
+	contentType = (string)(resp.Header.ContentType())
+	body = resp.Body()
 
 	// Convert status code
 	rsp := invokev1.NewInvokeMethodResponse(int32(statusCode), "", nil)

@@ -123,12 +123,11 @@ func (s *server) getServerCertificate() (*tls.Certificate, error) {
 // The method receives a request with an identity and initial cert and returns
 // A signed certificate including the trust chain to the caller along with an expiry date.
 func (s *server) SignCertificate(ctx context.Context, req *sentryv1pb.SignCertificateRequest) (*sentryv1pb.SignCertificateResponse, error) {
-	monitoring.CertSignRequestRecieved()
+	monitoring.CertSignRequestReceived()
 
 	csrPem := req.GetCertificateSigningRequest()
 
 	csr, err := certs.ParsePemCSR(csrPem)
-
 	if err != nil {
 		err = errors.Wrap(err, "cannot parse certificate signing request pem")
 		log.Error(err)

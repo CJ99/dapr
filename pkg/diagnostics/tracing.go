@@ -1,7 +1,15 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package diagnostics
 
@@ -70,10 +78,8 @@ const (
 	daprGRPCDaprService              = "Dapr"
 )
 
-var (
-	// Effectively const, but isn't a const from upstream.
-	messagingDestinationTopicKind = semconv.MessagingDestinationKindKeyTopic.Value.AsString()
-)
+// Effectively const, but isn't a const from upstream.
+var messagingDestinationTopicKind = semconv.MessagingDestinationKindKeyTopic.Value.AsString()
 
 // SpanContextToW3CString returns the SpanContext string representation.
 func SpanContextToW3CString(sc trace.SpanContext) string {
@@ -86,15 +92,17 @@ func SpanContextToW3CString(sc trace.SpanContext) string {
 
 // TraceStateToW3CString extracts the TraceState from given SpanContext and returns its string representation.
 func TraceStateToW3CString(sc trace.SpanContext) string {
-	var pairs = make([]string, 0, len(sc.Tracestate.Entries()))
-	var h string
+	pairs := make([]string, 0, len(sc.Tracestate.Entries()))
 	if sc.Tracestate != nil {
 		for _, entry := range sc.Tracestate.Entries() {
 			pairs = append(pairs, strings.Join([]string{entry.Key, entry.Value}, "="))
 		}
-		h = strings.Join(pairs, ",")
+		h := strings.Join(pairs, ",")
+		if h != "" && len(h) <= maxTracestateLen {
+			return h
+		}
 	}
-	return h
+	return ""
 }
 
 // SpanContextFromW3CString extracts a span context from given string which got earlier from SpanContextToW3CString format.
@@ -194,11 +202,15 @@ func AddAttributesToSpan(span *trace.Span, attributes map[string]string) {
 		return
 	}
 
+	var attrs []trace.Attribute
 	for k, v := range attributes {
 		// Skip if key is for internal use.
 		if !strings.HasPrefix(k, daprInternalSpanAttrPrefix) && v != "" {
-			span.AddAttributes(trace.StringAttribute(k, v))
+			attrs = append(attrs, trace.StringAttribute(k, v))
 		}
+	}
+	if len(attrs) > 0 {
+		span.AddAttributes(attrs...)
 	}
 }
 

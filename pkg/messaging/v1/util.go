@@ -1,7 +1,15 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package v1
 
@@ -71,9 +79,9 @@ func IsJSONContentType(contentType string) bool {
 
 // MetadataToInternalMetadata converts metadata to dapr internal metadata map.
 func MetadataToInternalMetadata(md map[string][]string) DaprInternalMetadata {
-	var internalMD = DaprInternalMetadata{}
+	internalMD := DaprInternalMetadata{}
 	for k, values := range md {
-		var listValue = internalv1pb.ListStringValue{}
+		listValue := internalv1pb.ListStringValue{}
 		if strings.HasSuffix(k, gRPCBinaryMetadataSuffix) {
 			// binary key requires base64 encoded.
 			for _, val := range values {
@@ -135,7 +143,7 @@ func isPermanentHTTPHeader(hdr string) bool {
 // InternalMetadataToGrpcMetadata converts internal metadata map to gRPC metadata.
 func InternalMetadataToGrpcMetadata(ctx context.Context, internalMD DaprInternalMetadata, httpHeaderConversion bool) metadata.MD {
 	var traceparentValue, tracestateValue, grpctracebinValue string
-	var md = metadata.MD{}
+	md := metadata.MD{}
 	for k, listVal := range internalMD {
 		keyName := strings.ToLower(k)
 		// get both the trace headers for HTTP/GRPC and continue
@@ -181,7 +189,7 @@ func InternalMetadataToGrpcMetadata(ctx context.Context, internalMD DaprInternal
 
 // IsGRPCProtocol checks if metadata is originated from gRPC API.
 func IsGRPCProtocol(internalMD DaprInternalMetadata) bool {
-	var originContentType = ""
+	originContentType := ""
 	if val, ok := internalMD[ContentTypeHeader]; ok {
 		originContentType = val.Values[0]
 	}
@@ -441,4 +449,14 @@ func ProtobufToJSON(message protoreflect.ProtoMessage) ([]byte, error) {
 		EmitUnpopulated: false,
 	}
 	return marshaler.Marshal(message)
+}
+
+// WithCustomGRPCMetadata applies a metadata map to the outgoing context metadata.
+func WithCustomGRPCMetadata(ctx context.Context, md map[string]string) context.Context {
+	for k, v := range md {
+		// Uppercase keys will be converted to lowercase.
+		ctx = metadata.AppendToOutgoingContext(ctx, k, v)
+	}
+
+	return ctx
 }

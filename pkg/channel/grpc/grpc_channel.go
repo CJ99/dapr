@@ -1,7 +1,15 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package grpc
 
@@ -24,20 +32,24 @@ import (
 
 // Channel is a concrete AppChannel implementation for interacting with gRPC based user code.
 type Channel struct {
-	client           *grpc.ClientConn
-	baseAddress      string
-	ch               chan int
-	tracingSpec      config.TracingSpec
-	appMetadataToken string
+	client             *grpc.ClientConn
+	baseAddress        string
+	ch                 chan int
+	tracingSpec        config.TracingSpec
+	appMetadataToken   string
+	maxRequestBodySize int
+	readBufferSize     int
 }
 
 // CreateLocalChannel creates a gRPC connection with user code.
-func CreateLocalChannel(port, maxConcurrency int, conn *grpc.ClientConn, spec config.TracingSpec) *Channel {
+func CreateLocalChannel(port, maxConcurrency int, conn *grpc.ClientConn, spec config.TracingSpec, maxRequestBodySize int, readBufferSize int) *Channel {
 	c := &Channel{
-		client:           conn,
-		baseAddress:      fmt.Sprintf("%s:%d", channel.DefaultChannelAddress, port),
-		tracingSpec:      spec,
-		appMetadataToken: auth.GetAppToken(),
+		client:             conn,
+		baseAddress:        fmt.Sprintf("%s:%d", channel.DefaultChannelAddress, port),
+		tracingSpec:        spec,
+		appMetadataToken:   auth.GetAppToken(),
+		maxRequestBodySize: maxRequestBodySize,
+		readBufferSize:     readBufferSize,
 	}
 	if maxConcurrency > 0 {
 		c.ch = make(chan int, maxConcurrency)
@@ -90,7 +102,12 @@ func (g *Channel) invokeMethodV1(ctx context.Context, req *invokev1.InvokeMethod
 	ctx = metadata.NewOutgoingContext(context.Background(), grpcMetadata)
 
 	var header, trailer metadata.MD
-	resp, err := clientV1.OnInvoke(ctx, req.Message(), grpc.Header(&header), grpc.Trailer(&trailer))
+
+	var opts []grpc.CallOption
+	opts = append(opts, grpc.Header(&header), grpc.Trailer(&trailer),
+		grpc.MaxCallSendMsgSize(g.maxRequestBodySize*1024*1024), grpc.MaxCallRecvMsgSize(g.maxRequestBodySize*1024*1024))
+
+	resp, err := clientV1.OnInvoke(ctx, req.Message(), opts...)
 
 	if g.ch != nil {
 		<-g.ch

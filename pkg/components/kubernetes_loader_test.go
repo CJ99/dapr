@@ -20,13 +20,14 @@ import (
 )
 
 type mockOperator struct {
+	operatorv1pb.UnimplementedOperatorServer
 }
 
 func (o *mockOperator) GetConfiguration(ctx context.Context, in *operatorv1pb.GetConfigurationRequest) (*operatorv1pb.GetConfigurationResponse, error) {
 	return nil, nil
 }
 
-func (o *mockOperator) ListComponents(ctx context.Context, in *emptypb.Empty) (*operatorv1pb.ListComponentResponse, error) {
+func (o *mockOperator) ListComponents(ctx context.Context, in *operatorv1pb.ListComponentsRequest) (*operatorv1pb.ListComponentResponse, error) {
 	component := v1alpha1.Component{}
 	component.ObjectMeta.Name = "test"
 	component.Spec = v1alpha1.ComponentSpec{
@@ -54,7 +55,7 @@ func (o *mockOperator) ListSubscriptions(ctx context.Context, in *emptypb.Empty)
 	}, nil
 }
 
-func (o *mockOperator) ComponentUpdate(in *emptypb.Empty, srv operatorv1pb.Operator_ComponentUpdateServer) error {
+func (o *mockOperator) ComponentUpdate(in *operatorv1pb.ComponentUpdateRequest, srv operatorv1pb.Operator_ComponentUpdateServer) error {
 	return nil
 }
 

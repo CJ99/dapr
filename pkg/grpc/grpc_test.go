@@ -1,11 +1,20 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package grpc
 
 import (
+	"context"
 	"crypto/x509"
 	"fmt"
 	"testing"
@@ -17,15 +26,16 @@ import (
 	"github.com/dapr/dapr/pkg/runtime/security"
 )
 
-type authenticatorMock struct {
-}
+type authenticatorMock struct{}
 
 func (a *authenticatorMock) GetTrustAnchors() *x509.CertPool {
 	return nil
 }
+
 func (a *authenticatorMock) GetCurrentSignedCert() *security.SignedCertificate {
 	return nil
 }
+
 func (a *authenticatorMock) CreateSignedWorkloadCert(id, namespace, trustDomain string) (*security.SignedCertificate, error) {
 	return nil, nil
 }
@@ -50,9 +60,10 @@ func TestGetGRPCConnection(t *testing.T) {
 		assert.NotNil(t, m)
 		port := 55555
 		sslEnabled := false
-		conn, err := m.GetGRPCConnection(fmt.Sprintf("127.0.0.1:%v", port), "", "", true, true, sslEnabled)
+		ctx := context.TODO()
+		conn, err := m.GetGRPCConnection(ctx, fmt.Sprintf("127.0.0.1:%v", port), "", "", true, true, sslEnabled)
 		assert.NoError(t, err)
-		conn2, err2 := m.GetGRPCConnection(fmt.Sprintf("127.0.0.1:%v", port), "", "", true, true, sslEnabled)
+		conn2, err2 := m.GetGRPCConnection(ctx, fmt.Sprintf("127.0.0.1:%v", port), "", "", true, true, sslEnabled)
 		assert.NoError(t, err2)
 		assert.Equal(t, connectivity.Shutdown, conn.GetState())
 		conn2.Close()
@@ -63,7 +74,8 @@ func TestGetGRPCConnection(t *testing.T) {
 		assert.NotNil(t, m)
 		port := 55555
 		sslEnabled := true
-		_, err := m.GetGRPCConnection(fmt.Sprintf("127.0.0.1:%v", port), "", "", true, true, sslEnabled)
+		ctx := context.TODO()
+		_, err := m.GetGRPCConnection(ctx, fmt.Sprintf("127.0.0.1:%v", port), "", "", true, true, sslEnabled)
 		assert.NoError(t, err)
 	})
 }

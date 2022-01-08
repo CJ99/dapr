@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
-	"io/ioutil"
 	"os"
 	"sync"
 	"time"
@@ -117,7 +116,6 @@ func (a *authenticator) CreateSignedWorkloadCert(id, namespace, trustDomain stri
 			TrustDomain:               trustDomain,
 			Namespace:                 namespace,
 		}, grpc_retry.WithMax(sentryMaxRetries), grpc_retry.WithPerRetryTimeout(sentrySignTimeout))
-
 	if err != nil {
 		diag.DefaultMonitoring.MTLSWorkLoadCertRotationFailed("sign")
 		return nil, errors.Wrap(err, "error from sentry SignCertificate")
@@ -156,7 +154,7 @@ func (a *authenticator) CreateSignedWorkloadCert(id, namespace, trustDomain stri
 
 // currently we support Kubernetes identities.
 func getToken() string {
-	b, _ := ioutil.ReadFile(kubeTknPath)
+	b, _ := os.ReadFile(kubeTknPath)
 	return string(b)
 }
 

@@ -1,7 +1,15 @@
-// ------------------------------------------------------------
-// Copyright (c) Microsoft Corporation and Dapr Contributors.
-// Licensed under the MIT License.
-// ------------------------------------------------------------
+/*
+Copyright 2021 The Dapr Authors
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 
 package messaging
 
@@ -36,7 +44,7 @@ var log = logger.NewLogger("dapr.runtime.direct_messaging")
 
 // messageClientConnection is the function type to connect to the other
 // applications to send the message using service invocation.
-type messageClientConnection func(address, id string, namespace string, skipTLS, recreateIfExists, enableSSL bool) (*grpc.ClientConn, error)
+type messageClientConnection func(ctx context.Context, address, id string, namespace string, skipTLS, recreateIfExists, enableSSL bool, customOpts ...grpc.DialOption) (*grpc.ClientConn, error)
 
 // DirectMessaging is the API interface for invoking a remote app.
 type DirectMessaging interface {
@@ -55,6 +63,8 @@ type directMessaging struct {
 	hostAddress         string
 	hostName            string
 	maxRequestBodySize  int
+	proxy               Proxy
+	readBufferSize      int
 }
 
 type remoteApp struct {
@@ -70,10 +80,11 @@ func NewDirectMessaging(
 	appChannel channel.AppChannel,
 	clientConnFn messageClientConnection,
 	resolver nr.Resolver,
-	tracingSpec config.TracingSpec, maxRequestBodySize int) DirectMessaging {
+	tracingSpec config.TracingSpec, maxRequestBodySize int, proxy Proxy, readBufferSize int, streamRequestBody bool) DirectMessaging {
 	hAddr, _ := utils.GetHostAddress()
 	hName, _ := os.Hostname()
-	return &directMessaging{
+
+	dm := &directMessaging{
 		appChannel:          appChannel,
 		connectionCreatorFn: clientConnFn,
 		appID:               appID,
@@ -85,7 +96,16 @@ func NewDirectMessaging(
 		hostAddress:         hAddr,
 		hostName:            hName,
 		maxRequestBodySize:  maxRequestBodySize,
+		proxy:               proxy,
+		readBufferSize:      readBufferSize,
 	}
+
+	if proxy != nil {
+		proxy.SetRemoteAppFn(dm.getRemoteApp)
+		proxy.SetTelemetryFn(dm.setContextSpan)
+	}
+
+	return dm
 }
 
 // Invoke takes a message requests and invokes an app, either local or remote.
@@ -134,7 +154,7 @@ func (d *directMessaging) invokeWithRetry(
 
 		code := status.Code(err)
 		if code == codes.Unavailable || code == codes.Unauthenticated {
-			_, connerr := d.connectionCreatorFn(app.address, app.id, app.namespace, false, true, false)
+			_, connerr := d.connectionCreatorFn(context.TODO(), app.address, app.id, app.namespace, false, true, false)
 			if connerr != nil {
 				return nil, connerr
 			}
@@ -153,14 +173,20 @@ func (d *directMessaging) invokeLocal(ctx context.Context, req *invokev1.InvokeM
 	return d.appChannel.InvokeMethod(ctx, req)
 }
 
+func (d *directMessaging) setContextSpan(ctx context.Context) context.Context {
+	span := diag_utils.SpanFromContext(ctx)
+	ctx = diag.SpanContextToGRPCMetadata(ctx, span.SpanContext())
+
+	return ctx
+}
+
 func (d *directMessaging) invokeRemote(ctx context.Context, appID, namespace, appAddress string, req *invokev1.InvokeMethodRequest) (*invokev1.InvokeMethodResponse, error) {
-	conn, err := d.connectionCreatorFn(appAddress, appID, namespace, false, false, false)
+	conn, err := d.connectionCreatorFn(context.TODO(), appAddress, appID, namespace, false, false, false)
 	if err != nil {
 		return nil, err
 	}
 
-	span := diag_utils.SpanFromContext(ctx)
-	ctx = diag.SpanContextToGRPCMetadata(ctx, span.SpanContext())
+	ctx = d.setContextSpan(ctx)
 
 	d.addForwardedHeadersToMetadata(req)
 	d.addDestinationAppIDHeaderToMetadata(appID, req)
